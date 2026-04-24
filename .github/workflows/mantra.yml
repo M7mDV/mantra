@@ -22,7 +22,7 @@ jobs:
 
       - name: Install mantra
         run: |
-          go install -v github.com/MrEmpy/mantra@latest
+          go install -v github.com/Brosck/mantra@latest
           echo "$HOME/go/bin" >> $GITHUB_PATH
           mantra -h | head -5 || echo "mantra installed"
 
@@ -58,7 +58,6 @@ jobs:
           SIZE=$(du -h mantra_results.txt | cut -f1)
           NOW=$(date -u '+%Y-%m-%d %H:%M UTC')
           
-          # Discord limit 8MB
           FILE_SIZE=$(stat -c%s mantra_results.txt 2>/dev/null || stat -f%z mantra_results.txt)
           MAX_SIZE=8388608
           
