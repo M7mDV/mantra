@@ -1,0 +1,86 @@
+name: Mantra JS Analysis
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'js_urls.txt'
+
+jobs:
+  mantra-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install mantra
+        run: |
+          go install -v github.com/MrEmpy/mantra@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+          mantra -h | head -5 || echo "mantra installed"
+
+      - name: Run mantra
+        run: |
+          if [ ! -f js_urls.txt ]; then
+            echo "❌ js_urls.txt not found!"
+            exit 1
+          fi
+          
+          echo "=== Starting mantra ==="
+          echo "Total URLs in js_urls.txt: $(wc -l < js_urls.txt)"
+          
+          cat js_urls.txt | mantra > mantra_results.txt
+          
+          echo "=== mantra completed ==="
+          RESULTS=$(wc -l < mantra_results.txt)
+          echo "Total findings: $RESULTS"
+          
+          if [ "$RESULTS" -gt 0 ]; then
+            echo "=== Results ==="
+            cat mantra_results.txt
+          else
+            echo "No findings."
+            echo "No secrets or interesting data found." > mantra_results.txt
+          fi
+
+      - name: Send Results to Discord
+        if: success()
+        run: |
+          URLS=$(wc -l < js_urls.txt)
+          RESULTS=$(wc -l < mantra_results.txt)
+          SIZE=$(du -h mantra_results.txt | cut -f1)
+          NOW=$(date -u '+%Y-%m-%d %H:%M UTC')
+          
+          # Discord limit 8MB
+          FILE_SIZE=$(stat -c%s mantra_results.txt 2>/dev/null || stat -f%z mantra_results.txt)
+          MAX_SIZE=8388608
+          
+          if [ "$FILE_SIZE" -lt "$MAX_SIZE" ]; then
+            echo "Sending file directly ($SIZE)..."
+            curl -X POST \
+              -H "Content-Type: multipart/form-data" \
+              -F "file=@mantra_results.txt" \
+              -F "payload_json={\"username\":\"Mantra Bot\",\"avatar_url\":\"https://avatars.githubusercontent.com/u/0\",\"embeds\":[{\"title\":\"🔑 Mantra JS Analysis\",\"color\":3066993,\"fields\":[{\"name\":\"📥 JS URLs\",\"value\":\"${URLS}\",\"inline\":true},{\"name\":\"🔍 Findings\",\"value\":\"${RESULTS}\",\"inline\":true},{\"name\":\"📦 Size\",\"value\":\"${SIZE}\",\"inline\":true}],\"footer\":{\"text\":\"mantra • ${NOW}\"}}]}" \
+              ${{ secrets.DISCORD_WEBHOOK_URL }}
+          else
+            echo "File too big, sending summary..."
+            RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            curl -X POST \
+              -H "Content-Type: application/json" \
+              -d "{\"username\":\"Mantra Bot\",\"embeds\":[{\"title\":\"🔑 Mantra JS Analysis\",\"description\":\"⚠️ File too large!\\n\\n📥 JS URLs: **${URLS}**\\n🔍 Findings: **${RESULTS}**\\n📦 Size: **${SIZE}**\\n\\n⬇️ [Download from GitHub Actions](${RUN_URL})\",\"color\":15158332,\"footer\":{\"text\":\"mantra • ${NOW}\"}}]}" \
+              ${{ secrets.DISCORD_WEBHOOK_URL }}
+          fi
+
+      - name: Upload Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mantra-results
+          path: mantra_results.txt
