@@ -22,8 +22,11 @@ jobs:
 
       - name: Install mantra
         run: |
-          go install -v github.com/Brosck/mantra@latest
-          echo "$HOME/go/bin" >> $GITHUB_PATH
+          # git clone بسبب case mismatch issue
+          git clone https://github.com/brosck/mantra.git /tmp/mantra
+          cd /tmp/mantra
+          go build -o mantra .
+          sudo mv mantra /usr/local/bin/
           mantra -h | head -5 || echo "mantra installed"
 
       - name: Run mantra
